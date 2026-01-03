@@ -1,0 +1,257 @@
+@startuml SIM-LAB System - Class Diagram
+
+' Styling
+skinparam classAttributeIconSize 0
+skinparam backgroundColor #FEFEFE
+skinparam class {
+    BackgroundColor<<Entity>> LightYellow
+    BorderColor<<Entity>> Orange
+    BackgroundColor<<Controller>> LightBlue
+    BorderColor<<Controller>> DodgerBlue
+}
+
+' ===== MODELS/ENTITIES =====
+
+class User <<Entity>> {
+    - id: bigint
+    - name: string
+    - email: string
+    - password: string
+    - role: enum
+    - email_verified_at: timestamp
+    - remember_token: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + bookings(): HasMany
+    + tickets(): HasMany
+    + approvedVisitors(): HasMany
+    --
+    + isSuperadmin(): bool
+    + isStaff(): bool
+    + isUser(): bool
+}
+
+class Visitor <<Entity>> {
+    - id: bigint
+    - name: string
+    - email: string (nullable)
+    - phone: string
+    - purpose: text
+    - person_to_meet: string
+    - photo: string
+    - check_in_time: timestamp (nullable)
+    - check_out_time: timestamp (nullable)
+    - status: enum
+    - approved_by: bigint (nullable)
+    - approved_at: timestamp (nullable)
+    - notes: text (nullable)
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + approver(): BelongsTo
+    --
+    + getPhotoUrlAttribute(): string
+    + scopePending(query): Builder
+    + scopeApproved(query): Builder
+    + scopeActive(query): Builder
+    + isPending(): bool
+    + isApproved(): bool
+    + isActive(): bool
+    + isCompleted(): bool
+}
+
+class Lab <<Entity>> {
+    - id: bigint
+    - name: string
+    - capacity: integer
+    - location: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + assets(): HasMany
+    + bookings(): HasMany
+}
+
+class Booking <<Entity>> {
+    - id: bigint
+    - user_id: bigint
+    - lab_id: bigint
+    - start_time: datetime
+    - end_time: datetime
+    - purpose: text
+    - status: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + user(): BelongsTo
+    + lab(): BelongsTo
+    + visitors(): HasMany
+    --
+    + scopeActive(query): Builder
+    + scopePending(query): Builder
+    + scopeApproved(query): Builder
+}
+
+class BookingVisitor <<Entity>> {
+    - id: bigint
+    - booking_id: bigint
+    - name: string
+    - email: string (nullable)
+    - phone: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + booking(): BelongsTo
+}
+
+class Asset <<Entity>> {
+    - id: bigint
+    - lab_id: bigint
+    - code: string
+    - name: string
+    - spec: text
+    - condition: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + lab(): BelongsTo
+    + tickets(): HasMany
+}
+
+class Ticket <<Entity>> {
+    - id: bigint
+    - user_id: bigint
+    - asset_id: bigint
+    - issue_description: text
+    - status: string
+    - created_at: timestamp
+    - updated_at: timestamp
+    --
+    + user(): BelongsTo
+    + asset(): BelongsTo
+    --
+    + scopeOpen(query): Builder
+    + scopeResolved(query): Builder
+}
+
+' ===== CONTROLLERS =====
+
+class GuestVisitorController <<Controller>> {
+    + showCheckInForm(): View
+    + store(Request): RedirectResponse
+    - storePhoto(photo): string
+    - notifyStaff(visitor): void
+}
+
+class StaffDashboardController <<Controller>> {
+    + index(Request): View
+    + visitorDetail(id): View
+    + approveVisitor(id): RedirectResponse
+    + rejectVisitor(id): RedirectResponse
+    + checkInVisitor(id): RedirectResponse
+    + checkOutVisitor(id): RedirectResponse
+    + updateNotes(Request, id): RedirectResponse
+}
+
+' ===== RELATIONSHIPS =====
+
+' User Relationships
+User "1" --> "0..*" Booking : creates
+User "1" --> "0..*" Ticket : submits
+User "1" --> "0..*" Visitor : approves
+
+' Visitor Relationships
+Visitor "0..*" --> "0..1" User : approved_by
+
+' Lab Relationships
+Lab "1" --> "0..*" Asset : contains
+Lab "1" --> "0..*" Booking : has
+
+' Booking Relationships
+Booking "0..*" --> "1" User : belongs_to
+Booking "0..*" --> "1" Lab : reserves
+Booking "1" --> "0..*" BookingVisitor : includes
+
+' BookingVisitor Relationships
+BookingVisitor "0..*" --> "1" Booking : belongs_to
+
+' Asset Relationships
+Asset "0..*" --> "1" Lab : located_in
+Asset "1" --> "0..*" Ticket : has_issues
+
+' Ticket Relationships
+Ticket "0..*" --> "1" User : reported_by
+Ticket "0..*" --> "1" Asset : concerns
+
+' Controller Dependencies
+GuestVisitorController ..> Visitor : <<creates>>
+GuestVisitorController ..> User : <<notifies>>
+
+StaffDashboardController ..> Visitor : <<manages>>
+StaffDashboardController ..> User : <<filter by role>>
+
+' ===== ENUMERATIONS =====
+
+enum UserRole {
+    user
+    staff
+    superadmin
+}
+
+enum VisitorStatus {
+    pending
+    approved
+    active
+    completed
+    rejected
+}
+
+enum BookingStatus {
+    pending
+    approved
+    rejected
+}
+
+enum TicketStatus {
+    open
+    resolved
+}
+
+enum AssetCondition {
+    good
+    damaged
+    maintenance
+}
+
+' Link Enums to Classes
+User --> UserRole
+Visitor --> VisitorStatus
+Booking --> BookingStatus
+Ticket --> TicketStatus
+Asset --> AssetCondition
+
+' ===== NOTES =====
+
+note right of Visitor
+  **Visitor Lifecycle:**
+  1. Guest creates (pending)
+  2. Staff approves/rejects
+  3. Check-in (active)
+  4. Check-out (completed)
+end note
+
+note left of User
+  **Roles:**
+  - superadmin: Full access
+  - staff: Manage visitors/bookings
+  - user: Book labs, create tickets
+end note
+
+note bottom of GuestVisitorController
+  **Public Access**
+  No authentication required
+  for guest check-in
+end note
+
+@enduml
